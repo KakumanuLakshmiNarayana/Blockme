@@ -1,0 +1,16 @@
+[Unit]
+Description=Blockme — No-Turn-Back Social Media Blocker
+After=network.target wg-quick@wg0.service
+
+[Service]
+ExecStart=/usr/bin/node /opt/blockme/server/dist/index.js
+WorkingDirectory=/opt/blockme/server
+Restart=always
+RestartSec=3
+User=root
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=DB_PATH=/var/lib/blockme/blockme.db
+
+[Install]
+WantedBy=multi-user.target

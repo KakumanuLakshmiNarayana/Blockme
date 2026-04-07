@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Blockme",
+  "version": "1.0.0",
+  "description": "Sub-platform URL blocking companion for Blockme (blocks YouTube Shorts, etc.)",
+  "permissions": ["declarativeNetRequest", "storage", "alarms"],
+  "host_permissions": ["http://localhost:3000/*", "<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Blockme"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      { "id": "ruleset_1", "enabled": true, "path": "rules.json" }
+    ]
+  }
+}
