@@ -83,3 +83,23 @@ export function isWireGuardUp(): boolean {
     return false;
   }
 }
+
+export function initServerKeys(): void {
+  const { getSetting, setSetting } = require('./db/queries');
+  if (getSetting('wg_server_private_key')) return; // already set
+
+  const keyFile = '/etc/wireguard/server.key';
+  if (!fs.existsSync(keyFile)) {
+    console.warn('[wireguard] server.key not found — skipping key init');
+    return;
+  }
+  try {
+    const privKey = fs.readFileSync(keyFile, 'utf-8').trim();
+    const pubKey = execSync(`echo '${privKey}' | wg pubkey`).toString().trim();
+    setSetting('wg_server_private_key', privKey);
+    setSetting('wg_server_public_key', pubKey);
+    console.log('[wireguard] Server keys initialized from /etc/wireguard/server.key');
+  } catch (err) {
+    console.error('[wireguard] Failed to initialize server keys:', err);
+  }
+}

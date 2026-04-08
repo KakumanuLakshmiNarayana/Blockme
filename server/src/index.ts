@@ -10,6 +10,7 @@ import { startDnsServer } from './dns-server';
 import { restoreSessionTimers } from './session-manager';
 import { startHealthMonitor } from './health-monitor';
 import { checkForClockTamper } from './time-guard';
+import { initServerKeys } from './wireguard';
 
 import { authRouter } from './routes/auth';
 import { sessionRouter } from './routes/session';
@@ -51,15 +52,18 @@ async function main(): Promise<void> {
   runMigrations();
   console.log('[db] Migrations complete');
 
-  // 2. Block set cache
+  // 2. WireGuard server key init (no-op if already set or wg not configured)
+  initServerKeys();
+
+  // 3. Block set cache
   refreshBlockSet();
   console.log('[blocklist] Block set loaded');
 
-  // 3. Restore session state (restart-safe)
+  // 4. Restore session state (restart-safe)
   restoreSessionTimers();
   console.log('[session] Session state restored');
 
-  // 4. DNS server
+  // 5. DNS server
   try {
     await startDnsServer();
   } catch (err) {
@@ -67,13 +71,13 @@ async function main(): Promise<void> {
     console.warn('[dns] Running in API-only mode without DNS blocking');
   }
 
-  // 5. Initial NTP clock check
+  // 6. Initial NTP clock check
   await checkForClockTamper().catch(() => {});
 
-  // 6. Health monitor
+  // 7. Health monitor
   startHealthMonitor();
 
-  // 7. HTTP server
+  // 8. HTTP server
   app.listen(PORT, () => {
     console.log(`[api] Blockme server running on http://0.0.0.0:${PORT}`);
     console.log(`[api] Dashboard: http://0.0.0.0:${PORT}`);
