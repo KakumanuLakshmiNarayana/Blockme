@@ -70,7 +70,11 @@ export async function startDnsServer(): Promise<void> {
     },
   });
 
-  const listenIp = process.env.DNS_LISTEN_IP || '10.13.13.1';
+  // Bind to all interfaces (0.0.0.0) so ALL devices can use this DNS:
+  //   - WireGuard VPN clients   → queries arrive on 10.13.13.1
+  //   - Home/office LAN devices → set router DNS to server's LAN IP
+  //   - Remote devices          → connect via WireGuard first
+  const listenIp = process.env.DNS_LISTEN_IP || '0.0.0.0';
   const listenPort = parseInt(process.env.DNS_PORT || '53');
 
   await new Promise<void>((resolve, reject) => {
@@ -79,7 +83,7 @@ export async function startDnsServer(): Promise<void> {
     server!.on('error', reject);
   });
 
-  console.log(`[dns] Listening on ${listenIp}:${listenPort}`);
+  console.log(`[dns] Listening on ${listenIp}:${listenPort} (all interfaces)`);
 }
 
 export function isDnsRunning(): boolean {

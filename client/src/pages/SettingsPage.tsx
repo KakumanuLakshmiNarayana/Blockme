@@ -8,12 +8,10 @@ export default function SettingsPage() {
   const [confirmPwd, setConfirmPwd] = useState('');
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
-  const [session, setSession] = useState<any>(null);
 
   const load = async () => {
-    const [s, sess] = await Promise.all([api.get('/settings'), api.get('/session')]);
+    const s = await api.get('/settings');
     setSettings(s.data);
-    setSession(sess.data);
   };
 
   useEffect(() => { load(); }, []);
@@ -37,34 +35,12 @@ export default function SettingsPage() {
     try { await api.delete('/stats'); setMsg('Stats cleared'); } catch { setError('Failed'); }
   };
 
-  const startSession = async () => {
-    try { await api.post('/session/start', {}); setMsg('Session started'); load(); } catch (e: any) { setError(e.response?.data?.error || 'Failed'); }
-  };
-
-  const stopSession = async () => {
-    if (!confirm('Stop the current session? Blocking will disengage.')) return;
-    try { await api.post('/session/stop'); setMsg('Session stopped'); load(); } catch (e: any) { setError(e.response?.data?.error || 'Failed'); }
-  };
-
   return (
     <div className="max-w-xl space-y-8">
       <h1 className="text-2xl font-bold text-white">Settings</h1>
 
       {msg && <div className="bg-green-900/30 border border-green-700 text-green-300 text-sm px-4 py-3 rounded-xl">{msg}</div>}
       {error && <div className="bg-red-900/30 border border-red-700 text-red-300 text-sm px-4 py-3 rounded-xl" onClick={() => setError('')}>{error}</div>}
-
-      {/* Session control */}
-      <section className="bg-gray-900 rounded-2xl p-5 border border-gray-800 space-y-3">
-        <h2 className="font-semibold">Blocking Session</h2>
-        <p className="text-sm text-gray-500">Sessions lock all settings. No edits allowed while a session is active.</p>
-        <div className="flex gap-3">
-          {session?.session ? (
-            <button onClick={stopSession} className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-5 py-2 rounded-xl">Stop Session</button>
-          ) : (
-            <button onClick={startSession} className="bg-red-600 hover:bg-red-700 text-white text-sm px-5 py-2 rounded-xl">Start Session</button>
-          )}
-        </div>
-      </section>
 
       {/* Server settings */}
       <section className="bg-gray-900 rounded-2xl p-5 border border-gray-800 space-y-4">
@@ -108,17 +84,34 @@ export default function SettingsPage() {
         <button onClick={clearStats} className="bg-red-900/30 hover:bg-red-900/50 border border-red-800 text-red-300 text-sm px-5 py-2 rounded-xl">Clear All Statistics</button>
       </section>
 
-      {/* Setup guide */}
-      <section className="bg-gray-900 rounded-2xl p-5 border border-gray-800 text-sm space-y-3">
-        <h2 className="font-semibold">Router DNS Setup (Home WiFi)</h2>
-        <p className="text-gray-500">Optional: also set your router's DNS to <code className="text-white bg-gray-800 px-1 rounded">{settings.server_ip || 'SERVER_IP'}</code> for an extra layer of protection without VPN on home network.</p>
-        <ol className="text-gray-500 list-decimal list-inside space-y-1">
-          <li>Log into your router (usually 192.168.1.1)</li>
-          <li>Find DHCP / DNS settings</li>
-          <li>Set Primary DNS to <code className="text-white">{settings.server_ip || 'SERVER_IP'}</code></li>
-          <li>Set Secondary DNS to 8.8.8.8</li>
-          <li>Save and reboot</li>
-        </ol>
+      {/* Cross-device coverage */}
+      <section className="bg-gray-900 rounded-2xl p-5 border border-gray-800 text-sm space-y-4">
+        <h2 className="font-semibold">Cross-Device Coverage</h2>
+
+        <div className="space-y-2">
+          <p className="text-gray-400 font-medium">Method 1 — WireGuard VPN (phones, tablets, laptops)</p>
+          <p className="text-gray-500">Add each device in the <strong className="text-gray-300">Devices</strong> tab. Once the WireGuard tunnel is active, blocking applies on <strong className="text-gray-300">all networks</strong> including 4G/5G.</p>
+        </div>
+
+        <div className="border-t border-gray-800 pt-4 space-y-2">
+          <p className="text-gray-400 font-medium">Method 2 — Router DNS (smart TVs, consoles, all home devices)</p>
+          <p className="text-gray-500">
+            Point your router's DNS to <code className="text-white bg-gray-800 px-1 rounded">{settings.server_ip || 'YOUR_SERVER_IP'}</code> — every device on that network is blocked automatically, no app needed.
+          </p>
+          <ol className="text-gray-500 list-decimal list-inside space-y-1">
+            <li>Log into your router (usually <code className="text-gray-300">192.168.1.1</code>)</li>
+            <li>Find DHCP / DNS settings</li>
+            <li>Set Primary DNS to <code className="text-white">{settings.server_ip || 'YOUR_SERVER_IP'}</code></li>
+            <li>Set Secondary DNS to <code className="text-white">8.8.8.8</code></li>
+            <li>Save and reboot the router</li>
+          </ol>
+          <p className="text-gray-600 text-xs">This covers: smart TVs, game consoles, tablets without WireGuard, guest devices — anything on your WiFi.</p>
+        </div>
+
+        <div className="border-t border-gray-800 pt-4 space-y-2">
+          <p className="text-gray-400 font-medium">Method 3 — Individual device DNS (computers)</p>
+          <p className="text-gray-500">Set DNS manually in network settings to <code className="text-white bg-gray-800 px-1 rounded">{settings.server_ip || 'YOUR_SERVER_IP'}</code> on any device for blocking without WireGuard.</p>
+        </div>
       </section>
     </div>
   );

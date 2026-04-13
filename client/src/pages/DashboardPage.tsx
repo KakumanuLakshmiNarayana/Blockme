@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import api from '../api/client';
 
@@ -25,37 +25,77 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`${color} text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide`}>{label}</span>;
 }
 
+const STATE_COLORS: Record<string, string> = {
+  active: 'text-green-400',
+  unlock_pending: 'text-yellow-400',
+  unlocked: 'text-yellow-300',
+  emergency: 'text-orange-400',
+};
+
+const STATE_LABELS: Record<string, string> = {
+  active: 'Blocking Active',
+  unlock_pending: 'Unlock Pending',
+  unlocked: 'Temporarily Unlocked',
+  emergency: 'Emergency Access',
+};
+
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const [session, setSession] = useState<SessionState | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [daily, setDaily] = useState<{ date: string; total: number }[]>([]);
   const [health, setHealth] = useState<HealthState>({ status: 'active', issues: [] });
+  const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
+
+  const load = async () => {
+    const [s, st, d, h] = await Promise.all([
+      api.get('/session'),
+      api.get('/stats/summary'),
+      api.get('/stats/daily?days=7'),
+      api.get('/health'),
+    ]);
+    setSession(s.data);
+    setStats(st.data);
+    setDaily(d.data);
+    setHealth(h.data);
+  };
 
   useEffect(() => {
-    const load = async () => {
-      const [s, st, d, h] = await Promise.all([
-        api.get('/session'),
-        api.get('/stats/summary'),
-        api.get('/stats/daily?days=7'),
-        api.get('/health'),
-      ]);
-      setSession(s.data);
-      setStats(st.data);
-      setDaily(d.data);
-      setHealth(h.data);
-    };
     load();
     const interval = setInterval(load, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  const stateColor = (state?: string) => {
-    if (!state) return 'text-gray-500';
-    if (state === 'active') return 'text-green-400';
-    if (state === 'unlocked') return 'text-yellow-400';
-    if (state === 'emergency') return 'text-orange-400';
-    return 'text-gray-400';
+  const handleStart = async () => {
+    setStarting(true);
+    try {
+      await api.post('/session/start', {});
+      await load();
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Failed to start session');
+    } finally {
+      setStarting(false);
+    }
   };
+
+  const handleStop = async () => {
+    setStopping(true);
+    setConfirmStop(false);
+    try {
+      await api.post('/session/stop');
+      await load();
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Failed to stop session');
+    } finally {
+      setStopping(false);
+    }
+  };
+
+  const hasSession = !!session?.session;
+  const state = session?.session?.state;
+  const emergencyLeft = (session?.emergency_cap ?? 3) - (session?.emergency_used_this_week ?? 0);
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -71,33 +111,101 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Session status */}
-      <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Session Status</h2>
-          {session?.session ? (
-            <span className={`font-bold capitalize ${stateColor(session.session.state)}`}>
-              {session.session.state.replace('_', ' ')}
-            </span>
-          ) : (
-            <span className="text-gray-500">No active session</span>
-          )}
-        </div>
-        {session?.session ? (
-          <div className="text-sm text-gray-400 space-y-1">
-            <p>Started: {new Date(session.session.started_at).toLocaleString()}</p>
-            {session.session.locked && <p className="text-red-400 font-medium">Locked — edits disabled during session</p>}
-            {session.wait_remaining_seconds > 0 && (
-              <p className="text-yellow-400">Unlock wait: {Math.floor(session.wait_remaining_seconds / 60)}m {session.wait_remaining_seconds % 60}s remaining</p>
-            )}
+      {/* ── Main session card ── */}
+      <div className={`rounded-2xl p-6 border ${hasSession ? 'bg-gray-900 border-gray-700' : 'bg-gray-900 border-gray-800'}`}>
+        {!hasSession ? (
+          /* ── No session: big START button ── */
+          <div className="text-center py-4 space-y-4">
+            <div className="text-5xl mb-2">🛡</div>
+            <h2 className="text-xl font-bold text-white">Blocking is off</h2>
+            <p className="text-sm text-gray-500 max-w-sm mx-auto">
+              Start a session to block social media across <strong className="text-gray-300">all your connected devices</strong> — phones, tablets, laptops, and computers simultaneously.
+            </p>
+            <button
+              onClick={handleStart}
+              disabled={starting}
+              className="mt-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-base px-10 py-4 rounded-2xl transition-colors shadow-lg shadow-red-900/40"
+            >
+              {starting ? 'Starting...' : 'Start Blocking'}
+            </button>
           </div>
         ) : (
-          <Link to="/unlock" className="text-sm text-red-400 hover:text-red-300">Start a blocking session →</Link>
+          /* ── Active session ── */
+          <>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <span className={`text-lg font-bold ${STATE_COLORS[state!] ?? 'text-gray-400'}`}>
+                  {STATE_LABELS[state!] ?? state}
+                </span>
+                <p className="text-xs text-gray-600 mt-1">
+                  Started {new Date(session!.session!.started_at).toLocaleString()}
+                </p>
+              </div>
+              {/* Pulsing dot when actively blocking */}
+              {state === 'active' && (
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs text-red-400 font-medium mb-4">
+              🔒 Locked — all {session?.session ? 'connected' : ''} devices are blocked. Blocklist &amp; schedule edits disabled.
+            </p>
+
+            {session!.wait_remaining_seconds > 0 && (
+              <div className="bg-yellow-900/20 border border-yellow-800 rounded-xl px-4 py-2 mb-4 text-sm text-yellow-400">
+                Unlock wait: {Math.floor(session!.wait_remaining_seconds / 60)}m {session!.wait_remaining_seconds % 60}s remaining
+              </div>
+            )}
+
+            {/* Quick actions */}
+            <div className="flex gap-3 mb-6">
+              <Link
+                to="/unlock"
+                className="flex-1 bg-yellow-700 hover:bg-yellow-600 text-white text-sm font-semibold px-4 py-3 rounded-xl text-center transition-colors"
+              >
+                🔓 Request Unlock
+              </Link>
+              <Link
+                to="/emergency"
+                className="flex-1 bg-orange-800 hover:bg-orange-700 text-white text-sm font-semibold px-4 py-3 rounded-xl text-center transition-colors"
+              >
+                🆘 Emergency ({emergencyLeft} left)
+              </Link>
+            </div>
+
+            {/* Stop session */}
+            {!confirmStop ? (
+              <button
+                onClick={() => setConfirmStop(true)}
+                className="w-full border border-gray-700 text-gray-500 hover:text-red-400 hover:border-red-800 text-sm py-2 rounded-xl transition-colors"
+              >
+                Stop blocking session
+              </button>
+            ) : (
+              <div className="bg-red-950/40 border border-red-900 rounded-xl p-4 space-y-3">
+                <p className="text-sm text-red-300 font-semibold">Stop session and disable blocking on all devices?</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleStop}
+                    disabled={stopping}
+                    className="flex-1 bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white text-sm font-bold py-2 rounded-xl"
+                  >
+                    {stopping ? 'Stopping...' : 'Yes, stop blocking'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmStop(false)}
+                    className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm py-2 rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
-        <div className="mt-4 flex gap-3">
-          <Link to="/unlock" className="bg-yellow-600 hover:bg-yellow-700 text-white text-sm px-4 py-2 rounded-lg">Request Unlock</Link>
-          <Link to="/emergency" className="bg-orange-700 hover:bg-orange-800 text-white text-sm px-4 py-2 rounded-lg">Emergency ({session?.emergency_cap ?? 3 - (session?.emergency_used_this_week ?? 0)} left)</Link>
-        </div>
       </div>
 
       {/* Stats cards */}
