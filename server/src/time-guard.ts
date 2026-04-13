@@ -1,9 +1,17 @@
 import ntpClient from 'ntp-client';
-import { getSetting, setSetting, logHealth } from './db/queries';
+import { getSetting, logHealth } from './db/queries';
 
 const TAMPER_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 let lastNtpTime: number | null = null;
 let lastNtpFetch: number = 0;
+
+// In-memory tamper flag — does NOT persist to DB.
+// Cleared automatically when clock drift resolves.
+let tamperDetected = false;
+
+export function isTamperDetected(): boolean {
+  return tamperDetected;
+}
 
 export async function getNtpTime(): Promise<Date> {
   return new Promise((resolve, reject) => {
@@ -26,10 +34,16 @@ export async function checkForClockTamper(): Promise<boolean> {
     lastNtpFetch = Date.now();
 
     if (Math.abs(drift) > TAMPER_THRESHOLD_MS) {
-      console.error(`[time-guard] Clock tamper detected! System: ${systemMs}, NTP: ${ntpMs}, drift: ${drift}ms`);
-      setSetting('blocking_enabled', '1');
+      console.error(`[time-guard] Clock tamper detected! drift: ${Math.round(drift / 1000)}s`);
+      tamperDetected = true;
       logHealth('degraded', `Clock tamper detected: drift ${Math.round(drift / 1000)}s`);
       return true;
+    }
+
+    // Drift resolved — clear tamper flag
+    if (tamperDetected) {
+      console.log('[time-guard] Clock drift resolved, clearing tamper flag');
+      tamperDetected = false;
     }
     return false;
   } catch (err) {

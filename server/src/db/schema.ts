@@ -115,7 +115,7 @@ export function runMigrations(): void {
   // Seed default settings
   const seedSettings = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`);
   const seedAll = db.transaction(() => {
-    seedSettings.run('blocking_enabled', '1');
+    seedSettings.run('blocking_enabled', '0');
     seedSettings.run('upstream_dns', '8.8.8.8');
     seedSettings.run('protection_enabled', '1');
     seedSettings.run('server_ip', '');

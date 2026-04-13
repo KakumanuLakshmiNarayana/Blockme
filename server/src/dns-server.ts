@@ -1,8 +1,9 @@
 // @ts-ignore - dns2 has no type definitions
 import dns2 from 'dns2';
-import { getSetting, recordBlock } from './db/queries';
+import { recordBlock, getActiveSession, getSetting } from './db/queries';
 import { isDomainBlocked, getBlockSet } from './blocklist';
 import { isScheduleCurrentlyBlocking } from './scheduler';
+import { isTamperDetected } from './time-guard';
 
 const { Packet, createServer, UDPClient } = dns2;
 
@@ -19,10 +20,17 @@ export async function startDnsServer(): Promise<void> {
       if (!question) { send(response); return; }
 
       const { name, type } = question;
-      const blockingEnabled = getSetting('blocking_enabled') === '1';
-      const scheduleBlocking = isScheduleCurrentlyBlocking();
 
-      if ((blockingEnabled || scheduleBlocking) && isDomainBlocked(name, getBlockSet())) {
+      // Block only when:
+      //   1. An active locked session exists (user started a blocking session), OR
+      //   2. A schedule is currently active, OR
+      //   3. Tamper-detection forced re-lock (blocking_enabled override)
+      const session = getActiveSession();
+      const sessionBlocking = !!session && session.locked === 1 && session.state === 'active';
+      const scheduleBlocking = isScheduleCurrentlyBlocking();
+      const tamperForced = isTamperDetected();
+
+      if ((sessionBlocking || scheduleBlocking || tamperForced) && isDomainBlocked(name, getBlockSet())) {
         // Non-blocking stat record
         setImmediate(() => {
           try { recordBlock(name.toLowerCase().replace(/\.$/, '')); } catch {}
